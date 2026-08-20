@@ -1,0 +1,9 @@
+# Use one single-signature admin and treasury authority on Devnet
+
+The official Devnet deployment uses one Opal-team-controlled single-signature wallet as the program upgrade authority, `ProtocolConfig.authority`, and owner of the configured USDC treasury token account. The trusted LLM resolver remains a separate operational signer with only its resolver role.
+
+Devnet adds no multisig, timelock, withdrawal allowance, withdrawal schedule, or program-mediated treasury governance. Bond Fees and Voting Fees transfer directly into the configured treasury token account. Its owner can transfer accumulated USDC at any time under the SPL Token program; Opal has no separate treasury-withdrawal instruction or onchain spending policy.
+
+**Why.** Devnet is an experimental MVP environment where operational simplicity and fast recovery are more important than production-grade separation of administrative powers. A separate treasury authority, multisig, or timelock would add ceremony without changing the intended Devnet trust model: users already trust the team-held upgrade key to change program behavior.
+
+**Consequences.** Devnet users trust one team-held key for both program upgrades and treasury custody. Compromise or misuse of that key can affect both powers, and there is no advance onchain delay before an upgrade or treasury transfer. Public documentation discloses this centralized control plainly and does not describe the deployment as immutable, trustless, multisig-controlled, or timelocked. It publishes the exact program, admin-authority, treasury token-account, and treasury-owner addresses only after the completed MVP deployment is officially designated; no development or test address is treated as official. Treasury transfers remain publicly observable on Solana. Mainnet authority and treasury precautions are intentionally deferred and are not promised by the Devnet documentation.

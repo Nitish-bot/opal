@@ -1,0 +1,9 @@
+# Void the canonical prediction market on every non-binary terminal result
+
+The canonical prediction-market integration maps an Opal `True` outcome to YES winning and `False` to NO winning. It treats `Unresolvable`, `NoConsensus`, and the exceptional `ResolverUnavailable` terminal status as invalid market results and executes the market's documented void/refund path instead of selecting YES or NO.
+
+The integration preserves the exact invalid reason in its state, API, interface, and audit history. It never converts `ResolverUnavailable` into `NoConsensus`, or describes `Unresolvable` and `NoConsensus` as equivalent Opal outcomes merely because the market handles both through one void path.
+
+**Why.** A binary market cannot select a truthful winning side when Opal affirmatively found the statement undecidable, when voting found no consensus, or when the resolver service failed before making a truth judgment. Choosing either YES or NO in those cases fabricates a binary answer that Opal did not provide. A single market-level invalid path keeps trader handling deterministic while retaining the reason needed to explain the underlying protocol result.
+
+**Consequences.** Prediction-market trader refunds are market accounting, not Opal participant settlement. `Unresolvable` assigns fault to the asserter and follows ordinary Opal fees, slashing, and rewards. `NoConsensus` assigns no fault and slashes nobody, but ordinary Bond Fees and Voting Fees still apply. `ResolverUnavailable` is not a Resolution Outcome; it charges no Bond Fee and refunds the asserter and LLM disputer's two 500 USDC bonds in full. External transaction costs are not refunded. An integration must read the exact Assertion directly at Solana `finalized` commitment and accept either normal `Resolved` or the explicit terminal resolver-unavailable state before irreversibly resolving or voiding its market.

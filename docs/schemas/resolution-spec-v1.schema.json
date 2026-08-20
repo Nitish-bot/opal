@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.opalhq.xyz/schemas/resolution-spec-v1.schema.json",
+  "title": "Opal Resolution Spec v1",
+  "description": "The immutable rubric applied to current authoritative information when resolving an Opal Assertion.",
+  "$comment": "Opal clients separately enforce a 16,384-byte maximum on the exact UTF-8 JSON because JSON Schema does not express a total encoded-byte limit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "definitions", "sources", "conflictBehavior", "ambiguityHandling"],
+  "properties": {
+    "schemaVersion": {
+      "const": "1"
+    },
+    "definitions": {
+      "description": "Terms whose meanings must be fixed to apply the statement consistently. May be empty.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["term", "meaning"],
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 1
+          },
+          "meaning": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "sources": {
+      "description": "Authoritative sources ordered from highest to lowest priority.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "uri", "unavailableBehavior"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uri": {
+            "type": "string",
+            "format": "uri",
+            "minLength": 1
+          },
+          "unavailableBehavior": {
+            "description": "Whether resolution falls through to the next ordered source or becomes Unresolvable. The final source cannot use next-source.",
+            "enum": ["next-source", "unresolvable"]
+          }
+        }
+      }
+    },
+    "conflictBehavior": {
+      "description": "Current information from the highest-ranked available source controls when sources conflict.",
+      "const": "highest-priority-wins"
+    },
+    "ambiguityHandling": {
+      "description": "Normative instructions for statement-specific ambiguity that do not override source ordering or protocol evidence timing.",
+      "type": "string",
+      "minLength": 1
+    },
+    "rationale": {
+      "description": "Optional human-readable context. Non-normative and cannot override any other field.",
+      "type": "string"
+    }
+  }
+}

@@ -12,7 +12,7 @@ Target use case: prediction-market resolution. Statements like "Kanye West's Del
 
 ## How It Works
 
-1. **Assert** — someone posts a statement, a USDC bond, and a Resolution Spec (the rubric; stored off-chain on Arweave, its hash on-chain)
+1. **Assert** — someone posts a statement, a USDC bond, and a Resolution Spec (the rubric; stored off-chain on Arweave, its canonical `ar://` URI onchain)
 2. **Wait** — liveness window where anyone can dispute
 3. **Undisputed** — if no dispute, resolves `True`
 4. **Disputed** — the first dispute triggers on-chain LLM resolution: a single trusted off-chain resolver posts the verdict via the resolver-gated `submit_llm_resolution` instruction `[Built]`; the off-chain service that makes the LLM call is `[MVP-target]` (the former 3-feed Switchboard council was removed per [ADR-0002](docs/adr/0002-trusted-llm-resolver.md))
@@ -25,7 +25,8 @@ The LLM layer is deliberately trusted, not trustless: a wrong verdict is challen
 
 - `True` — verified under the spec
 - `False` — contradicted under the spec
-- `Unresolvable` — cannot be decided under the spec (ambiguous, conflicting, premature, or no outcome reached the vote's supermajority). `[MVP-target]` Settles **no-fault**: both bonds are returned, no one is slashed, and the assertion is voided (today any non-`True` outcome is settled like `False`) ([ADR-0005](docs/adr/0005-no-fault-unresolvable.md)).
+- `Unresolvable` — an affirmative finding that the statement cannot be decided under the spec. `[MVP-target]` The asserter is incorrect; in voting, `Unresolvable` must itself reach 67% and participates in ordinary slashing and rewards.
+- `NoConsensus` — no voting option reached 67%. `[MVP-target]` Settles no-fault: every bond and voting stake is returned minus ordinary fees, nobody is slashed, and no rewards are paid. See [ADR-0007](docs/adr/0007-unresolvable-vs-no-consensus.md).
 
 ## Voting `[MVP-target]`
 
@@ -33,8 +34,11 @@ The final escalation is a private, per-dispute, USDC-staked vote (today `open_vo
 
 - **Linear weight** — 1 staked USDC = 1 vote. Sybil-neutral; whale dominance is deterred by slashing, not by a weight curve.
 - **Schelling-point slashing** — losing-side voters are slashed and winning-side voters are paid from the losing side, so the honest answer under the spec is the focal point.
-- **Private** — votes are sealed during the window via a MagicBlock ephemeral rollup; only the aggregate outcome is committed on-chain, which prevents a public tally from collapsing into a bandwagon.
-- **Supermajority** — a single outcome must reach the configured `supermajority_bps` threshold, otherwise the vote resolves `Unresolvable`.
+- **Pre-funded** — voters deposit USDC into a reusable Private Voting Balance before casting; a vote cannot pull its stake directly from a public wallet balance.
+- **One Voting PER** — every Devnet Vote Round and private balance uses the same deployment-wide MagicBlock validator, allowing balances to be reused across votes.
+- **Co-located settlement** — before the seven-day Voting Window starts, all three Participant Bonds move into the same private rollup as voting stake. Opal creates and sponsors any missing private payout balances for the bonded participants. Every vote-stage refund and reward—including asserter and disputer payouts—must be claimed into a Private Voting Balance after finalization; withdrawing to the public Solana wallet is a separate manual action.
+- **Private while open** — during the Voting Window, a MagicBlock PER hides private balances, choices, stakes, and per-outcome totals so voters cannot bandwagon. Deposits and withdrawals remain public on Solana. After settlement, aggregates and each wallet's selected outcome and stake are public.
+- **Supermajority** — `True`, `False`, or `Unresolvable` must reach 67%, otherwise the vote resolves `NoConsensus`.
 
 ## Asset
 
@@ -102,8 +106,8 @@ These pieces are v1 targets, not yet shipped:
 
 - **Trusted LLM resolver** — the on-chain half is built: `submit_llm_resolution` is gated on a dedicated `ProtocolConfig.resolver` key (separate from `authority`, so a leaked hot resolver key can only post a challengeable verdict) and accepts only `True`/`False`/`Unresolvable`. The off-chain service that makes the real LLM call and posts verdicts is the remaining target; the former 3-feed Switchboard council was removed per ADR-0002. On-chain LLM provenance (prompt/response/evidence hashing) is deferred to a `[Vision]` trust-minimized resolver.
 - **Private staked voting** — opening a vote sets up the round, but real MagicBlock private voting (delegation, ER settlement) is the MVP target.
-- **Resolution Spec on Arweave** — the on-chain `auxiliary_hash` field exists; off-chain Arweave storage and integrity-checking is planned.
-- **No-fault settlement & reward split** — `Unresolvable` no-fault settlement and the share-based settlement split (`llm_disputer_reward_share_bps`, `vote_disputer_reward_share_bps`, `voter_reward_share_bps`, `treasury_share_bps`) are planned; only `protocol_fee_bps` is applied today.
+- **Resolution Spec on Arweave** — the onchain field exists as the legacy `auxiliary_hash: [u8; 128]`; canonical `ar://` validation, fail-closed verification, and the rename/narrowing to `resolution_spec_uri: [u8; 48]` are planned.
+- **No Consensus settlement & pro-rata rewards** — `NoConsensus` no-fault settlement, equal 500 USDC Participant Bonds, per-bond/vote fees, and unified pro-rata vote rewards are planned; the current ratio, fee, and role-specific share fields are legacy implementation under the target model.
 - **Field names** — state and config fields still carry the legacy `pusd` prefix; a later PR renames them to `usdc` to match the committed asset.
 
 ## Vision (post-MVP)
@@ -114,7 +118,7 @@ Directions recorded so they're not mistaken for current behavior:
 - **Trust-minimized LLM** — Switchboard On-Demand or TEE-attested (permissionless) inference replacing the trusted resolver; on-chain LLM provenance hashing, if any, lands here.
 - **Proof-of-personhood** — enabling sub-linear/quadratic voting weight without Sybil collapse.
 - **Stake-duration reputation** — long-term staking that accrues voter weight.
-- **Timed resolution** — assertions carrying a resolves-at date so they can't finalize before the truth exists.
+- **Timed resolution** — a possible future protocol-level lifecycle field preventing premature resolution; it would not be an asserter-selected cutoff inside the immutable Resolution Spec.
 
 ## Security
 

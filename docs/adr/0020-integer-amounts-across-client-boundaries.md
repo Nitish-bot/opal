@@ -1,0 +1,9 @@
+# Represent protocol amounts as integer atomic units across client boundaries
+
+Every onchain USDC amount is an unsigned `u64` count of atomic units. TypeScript client logic represents those values as `bigint`; generated Anchor bindings may use `BN` only at their binding boundary and convert without passing through a JavaScript `number`. Any JSON-shaped request or response in the Preview Integration API serializes an amount as an unsigned base-10 integer string in atomic units. For example, 500 USDC is `500000000n` in TypeScript and `"500000000"` in JSON because USDC has six decimal places.
+
+The Preview Integration API is a documentation-only sketch of a future client layer over the Solana program and its Anchor IDL. It is not an HTTP service, deployed API, runnable SDK, or second protocol surface. Its examples describe how a future client will read accounts, derive addresses, and construct wallet-signed transactions; the program and IDL remain authoritative.
+
+**Why.** A JavaScript `number` cannot exactly represent every `u64`, and human-unit decimals introduce rounding and locale ambiguity at a protocol boundary. Keeping integer atomic units end to end makes serialization lossless and matches the value enforced by the program. Separating the client-shaped preview from the actual program also prevents illustrative documentation from being mistaken for a deployed service.
+
+**Consequences.** Preview examples never accept or return a JavaScript `number` for a USDC amount. JSON amount strings contain digits only: no sign, decimal point, exponent, grouping separator, or unit suffix, and parsing must reject values outside the `u64` range. Participant-facing formatting such as `500 USDC` is a display concern handled by helpers after exact parsing; it is never submitted as a protocol amount. A real client may later choose different method names or packaging, but it must preserve the same lossless amount semantics when interacting with the program.
