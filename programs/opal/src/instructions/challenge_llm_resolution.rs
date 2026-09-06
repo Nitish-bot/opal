@@ -84,7 +84,10 @@ pub struct ChallengeLlmResolution<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<ChallengeLlmResolution>, _args: ChallengeLlmResolutionArgs) -> Result<()> {
+pub fn handler(
+    ctx: Context<ChallengeLlmResolution>,
+    _args: ChallengeLlmResolutionArgs,
+) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
 
     let assertion = ctx.accounts.assertion.load()?;

@@ -79,7 +79,10 @@ pub struct FinalizeLlmResolution<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-pub fn handler(ctx: Context<FinalizeLlmResolution>, _args: FinalizeLlmResolutionArgs) -> Result<()> {
+pub fn handler(
+    ctx: Context<FinalizeLlmResolution>,
+    _args: FinalizeLlmResolutionArgs,
+) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
 
     let assertion = ctx.accounts.assertion.load()?;

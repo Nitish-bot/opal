@@ -41,9 +41,10 @@ This file consolidates product decisions made while defining the future public d
 - Every Resolution Spec orders its authoritative sources and defines deterministic conflict and source-unavailability rules. A one-source spec satisfies this requirement automatically.
 - A multi-source spec must state which source controls when current information conflicts and whether a lower-ranked source may substitute when a preferred source is unavailable. If its declared rules leave a material conflict or availability gap unresolved, the Assertion resolves `Unresolvable`; the resolver and voters cannot invent an unstated preference.
 - Creating clients and integration services reject a multi-source spec whose ordering or conflict/unavailability behavior is missing or ambiguous. The onchain program cannot inspect this off-chain content, so a malformed spec created through a bypassing client remains possible and resolves `Unresolvable` when applied.
-- Evidence timing is protocol-wide: every resolution action applies the unchanged spec to the latest relevant information available from its authoritative sources when that action occurs.
-- A source correction while the Assertion is non-final may affect a later resolution layer. During voting it can influence wallets that have not yet voted, but cannot change an already accepted immutable Vote.
-- Once the Assertion reaches a terminal truth outcome, later corrections never reopen or mutate it. An integrator needing a new judgment creates and references a new Assertion.
+- For the Devnet MVP, evidence timing is protocol-wide: every resolution action applies the unchanged spec to the latest relevant information available from its authoritative sources when that action occurs.
+- During the Devnet MVP, a source correction while the Assertion is non-final may affect a later resolution layer. During voting it can influence wallets that have not yet voted, but cannot change an already accepted immutable Vote.
+- Under the Devnet MVP rule, once the Assertion reaches a terminal truth outcome, later corrections never reopen or mutate it. An integrator needing a new judgment creates and references a new Assertion.
+- `[Vision]` Post-MVP, Opal intends to invalidate a non-final Assertion without assigning a truth outcome when authoritative source information or rubric-relative truth materially changes between creation and terminal finalization. An integration needing a judgment would create a new Assertion. Detection, evidence capture, lifecycle representation, and settlement economics remain undecided; until a later ADR specifies them, the MVP rule remains normative.
 - Before signing Assertion creation, the creating client or integration service retrieves the uploaded Arweave object, verifies that it matches the committed identifier, and refuses to sign when retrieval or integrity verification fails. The Solana program cannot perform this network check.
 - The asserter normally uploads the Resolution Spec and pays the external Arweave storage cost; an integrating application may sponsor it. Opal charges no storage fee.
 - An existing upload may be reused without a duplicate storage payment only after the creating client retrieves it and verifies its bytes against the supplied immutable identifier.
@@ -52,8 +53,10 @@ This file consolidates product decisions made while defining the future public d
 - The current internal `auxiliary_hash: [u8; 128]` field is renamed and narrowed to `resolution_spec_uri: [u8; 48]` before the official Devnet deployment. A future identifier width requires an explicit versioned account change rather than consuming reserved bytes.
 - Creating clients fail closed unless Arweave signature/data-root verification proves the retrieved bytes match the known ID. No separate raw content digest is required by the protocol.
 - Resolution Specs use UTF-8 JSON validated against a published, versioned JSON Schema, not free-form Markdown. Devnet uses `schemaVersion: "1"`; future schema versions cannot reinterpret an existing v1 spec.
-- V1 requires explicit definitions, a non-empty ordered source list in which each source declares unavailability behavior, `conflictBehavior: "highest-priority-wins"`, and non-empty ambiguity handling. Optional `rationale` text is human-readable and non-normative.
+- V1 requires explicit definitions containing non-whitespace text, a non-empty ordered source list in which each source declares unavailability behavior, `conflictBehavior: "highest-priority-wins"`, and non-whitespace ambiguity handling. Normative strings cannot have boundary whitespace. Every source URI begins with the exact lowercase `https://` prefix and contains no embedded credentials. Optional `rationale` text is human-readable and non-normative.
 - Unknown fields are invalid. Creating clients also reject the cross-field case where the final source uses `next-source`.
+- Creating-client and resolver validators enable Draft 2020-12 URI format assertion and then parse each source URL independently. The resolver also rejects non-public destinations, revalidates every redirect, prevents DNS rebinding, and bounds redirects, duration, bytes, decompression, and content types; schema validation alone cannot enforce network safety.
+- Before ordinary JSON decoding, a duplicate-key-aware parser rejects repeated decoded object member names. Cross-field validation rejects repeated definition terms after trimming and case-sensitive Unicode NFC normalization and repeated sources after WHATWG URL serialization with the fragment removed, including a repeated term paired with a conflicting meaning.
 - The exact UTF-8 JSON is limited to 16 KiB (16,384 bytes), checked before upload and again after retrieval before signing creation. This is an Opal application-level resource bound, not an Arweave protocol limit, upload tier, or pricing threshold.
 - The creating client validates the exact JSON bytes before upload, then retrieves and revalidates those same bytes before signing Assertion creation. The onchain program stores only the URI and cannot parse the spec.
 - Public docs publish the schema, a rendered field reference, and complete valid and invalid examples. Devnet does not require canonical JSON serialization: semantically equivalent byte sequences may have different Arweave IDs.
@@ -73,14 +76,19 @@ This file consolidates product decisions made while defining the future public d
 - Assertions begin with the optimistic default answer `True`.
 - The **Assertion Dispute Window** lasts seven days.
 - A first valid dispute locks another 500 USDC bond and triggers the trusted LLM resolver.
+- Each resolver job freezes the published provider, immutable model revision, decoding/tool parameters, prompt, extraction, network-limit, retry, and output-parser policy active when that job is accepted. Policy upgrades affect only later jobs.
+- The resolver validates the immutable spec, retrieves sources in declared priority order, allows at most two bounded retries for specified transient fetch failures, and applies each source's explicit unavailability behavior. It never silently substitutes a source.
+- A retrievable, integrity-verified but invalid Resolution Spec deterministically short-circuits to `Unresolvable`; retrieval or integrity failure produces no verdict. Otherwise, after constructing the evidence bundle, the resolver makes at most one logical model request. Source text is isolated as untrusted evidence, cannot override the Statement, spec, or resolver policy, and model tools are disabled. A retry is allowed only through a provider idempotency key that guarantees the same request; failed, ambiguous, or malformed inference produces no heuristic or replacement verdict and can reach `ResolverUnavailable` at the deadline.
+- A structured resolver report is retained off-chain for at least 90 days, including retrieval metadata and hashes, exact prompt and raw response, model/policy identifiers, parsed verdict, and rationale. It is diagnostic and non-normative because the MVP does not bind it on-chain.
 - The LLM may return `True`, `False`, or `Unresolvable`; it cannot return `NoConsensus`.
 - The **LLM Dispute Window** lasts seven days after the LLM verdict is posted.
 - A second valid dispute locks a third 500 USDC bond and triggers Vote Initialization.
-- **Vote Initialization** is an automatic, untimed technical transition, not a participant-facing window. The Devnet model assumes it succeeds and defines no abort or timeout outcome.
-- The **Voting Window** lasts seven days and begins only after Vote Initialization and PER co-location complete.
+- **Vote Initialization** is an idempotent, untimed technical transition, not a participant-facing window. Accepting the second dispute atomically freezes its setup nonce, mint, Voting PER validator, and setup payer; records reserve accounting; transfers the configured capped lamport reserve from the Vote Disputer into a zero-data, System-owned `VoteSetupPayer` PDA; and leaves the Assertion in `PendingVote`. Later Solana and PER transactions advance monotonic receipt-backed phases.
+- The feasibility spike must prove that Opal can `invoke_signed` for `VoteSetupPayer` in the selected low-level MagicBlock CPI. If it passes, any fee-paying caller may resume the first incomplete setup phase; an exact retry is a no-op, while conflicting state fails before duplicate token movement or delegation. This payer path is a Devnet release gate, not a hidden Vote-Disputer signer fallback. Devnet defines no setup abort or timeout, so a prolonged MagicBlock outage may keep bonds locked in `PendingVote`.
+- The **Voting Window** lasts seven days and begins on the authoritative PER only after bond representation and private-state co-location complete. The later Solana `Voting` projection may lag, so voting clients query authenticated PER state.
 - The three participant-facing windows are therefore Assertion Dispute, LLM Dispute, and Voting; all last seven days.
 - A final Assertion is immutable. Later corrections use new Assertions and never mutate a resolved record.
-- Expiry of a dispute or voting window does not execute code automatically. Anyone may submit a deterministic finalization transaction after the applicable deadline; the caller cannot choose the result or redirect settlement and normally pays the external network cost unless an integrator sponsors it.
+- Expiry of a dispute or voting window does not execute code automatically. Anyone may submit a deterministic base-layer finalization transaction after the applicable deadline; the caller cannot choose the result or redirect settlement and normally pays the external network cost unless an integrator sponsors it. The private PER vote-finalization phase is permissionless only if the feasibility spike proves its PDA authorities.
 - Until a finalization transaction lands, the Assertion remains in its eligible pre-final state. Integrators must not infer a terminal result from the clock alone.
 - A trusted-resolver outage has an exceptional terminal `ResolverUnavailable` path so validly posted bonds cannot remain locked forever.
 - The Resolver Deadline is 24 hours from acceptance of the first dispute. If no verdict has posted by then, the Assertion becomes eligible for `ResolverUnavailable`.
@@ -106,6 +114,7 @@ This file consolidates product decisions made while defining the future public d
 ## Bonded roles and dispute races
 
 - The Asserter, LLM Disputer, and Vote Disputer each post exactly 500 USDC on Devnet.
+- In addition to that equal USDC bond, the Vote Disputer pre-funds the configured capped lamports for fixed per-round account rent and delegation reserves in `VoteSetupPayer`. Each later caller pays its own transaction/provider fee; Opal does not reimburse either category.
 - The three bonded roles must be held by three distinct wallet addresses in one Assertion. This is a wallet-level constraint, not proof of three people.
 - The first valid dispute transaction accepted before the applicable deadline becomes the bonded disputer.
 - Competing or retried dispute transactions that land later fail without locking a bond or incurring an Opal Bond Fee. External execution costs may still apply.
@@ -124,6 +133,7 @@ This file consolidates product decisions made while defining the future public d
 - A failed or rejected Vote transaction creates no Vote position and incurs no Opal Voting Fee. External execution costs may still apply.
 - Opal charges no protocol fee on Private Voting Balance deposits, payout claims, or withdrawals.
 - External Solana, MagicBlock, or integration-provider execution costs are separate from Opal's fees.
+- Opal provides no protocol-funded sponsorship. Participants and callers pay their assigned external costs unless an integrating application voluntarily sponsors them outside the protocol guarantee.
 
 ## Pre-vote settlement
 
@@ -155,84 +165,92 @@ This file consolidates product decisions made while defining the future public d
 
 ## Vote-stage economics
 
-- Before voting, all three bonds and all voting stake are co-located in one PER-resident Vote Settlement Vault.
-- Each correct bonded position contributes 500 units of Reward Weight.
-- Each winning Vote contributes Reward Weight equal to its original Gross Voting Stake.
+- Before voting, all three bonds are represented in one round-scoped logical Vote Settlement Vault on the PER. Each accepted Vote later moves its stake into that same logical balance; actual USDC custody remains in eSPL's shared per-mint global vault on Solana.
+- Each correct bonded position contributes `500_000_000` USDC atomic units of Reward Weight.
+- Each winning Vote contributes Reward Weight equal to its original `gross_stake_atomic`.
 - Incorrect bonds and losing voting stake, after ordinary fees, form one Slashed Pool.
-- Correct bonded participants and winning voters receive fee-adjusted principal plus a pro-rata share of the Slashed Pool according to Reward Weight.
-- Opal takes no additional treasury share from the Slashed Pool.
+- Each correct bonded participant and winning voter receives fee-adjusted principal plus `floor(slashed_pool_atomic × reward_weight_atomic ÷ total_reward_weight_atomic)`.
+- Aggregate weight cannot reveal the sum of every independently floored payout. Finalization freezes per-outcome position counts and initializes the exact positive-unclaimed-position count; only successful positive PER claims decrement it. Once it reaches zero, checked balance and claimed-total reconciliation classifies a non-negative residual smaller than the rewarded-position count as treasury-owned pro-rata dust; a mismatch becomes `RecoveryNeeded`. Opal takes no discretionary percentage of the Slashed Pool.
+- All three vote-stage Bond Fees and the exact accumulated sum of independently floored Voting Fees move into the program-PDA-controlled `TreasuryStagingBalance` during PER settlement. A fixed-destination `TreasuryFeeDelivery` sends that liability to the configured public treasury. Dust later uses a separate `TreasuryDustDelivery` after the last positive claim. Each has its own nonce and one-way `Pending`, `Completed`, or `RecoveryNeeded` status; neither is reset or reused. Either path is permissionless only if the feasibility spike proves PDA authorization. A pending delivery blocks the staging balance and that delivery record, not an already emptied settlement record, and does not reopen truth.
 - `Unresolvable` settles like any other winning, fault-assigned vote outcome.
 - `NoConsensus` slashes nobody, pays no rewards, and makes every bond and Vote stake claimable minus ordinary fees.
 
 ## Private Voting Balance
 
 - Voting stake comes from a reusable, wallet-scoped Private Voting Balance on the deployment-wide MagicBlock Voting PER.
+- Each voter creates, funds, and delegates its own canonical balance before voting. Opal does not create it or guarantee a sponsor.
+- A bonded participant that does not vote may wait until it has a payout to claim, then use the spike-proven direct initializer to create and delegate an empty canonical destination and pay its SOL setup costs. Receiving a payout must require no separate positive USDC deposit, and its missing balance does not block Vote Initialization or finalization.
 - Each deposit must be at least 1 USDC. Multiple deposits add to the same balance.
 - Opal imposes no withdrawal minimum; any positive unlocked amount may be withdrawn.
 - Only unlocked balance may fund a Vote or withdrawal.
 - Active Vote stakes cannot be withdrawn.
-- A finalized but unclaimed payout remains in the Vote Settlement Vault and is not part of available private balance.
+- A finalized but unclaimed payout remains attributed to the logical Vote Settlement Vault balance and is not part of available private balance.
 - Once a payout claim confirms, the credited USDC is immediately unlocked for another Vote or withdrawal. There is no post-claim cooldown.
-- A wallet may close its reusable Private Voting Balance only with its own signature and only when its balance, active locks, and outstanding claims are all zero.
+- A wallet may close its reusable Private Voting Balance only with its own signature and only when that balance and its active locks are zero. Outstanding round claims survive closure and require recreating the same canonical empty destination before claiming.
 - The balance, Vote positions, and claims remain bound to the original wallet. Opal has no admin recovery or destination override for a lost key.
 
 ## Deposit and withdrawal lifecycle
 
 - Deposits and withdrawals are separate from voting.
 - Opal charges no deposit or withdrawal fee; external execution costs may apply.
-- Participant-facing cross-runtime status is `Pending`, `Completed`, or `Recovery Needed`.
+- Machine cross-runtime status is `Pending`, `Completed`, or `RecoveryNeeded`; participant interfaces render `RecoveryNeeded` as “Recovery Needed.”
 - A transfer is `Completed` only after the destination balance confirms.
 - Source-transaction confirmation alone never makes deposited funds usable or proves a withdrawal completed.
 - Deposits and withdrawals are publicly visible on Solana and can leak timing or amount correlations.
 
 ## Vote privacy
 
-- During the Voting Window, individual choices, stake amounts, private balances, and per-outcome totals are private inside the MagicBlock PER.
-- The private tally prevents voters from following a visible leader.
-- Finalization makes aggregate stake per outcome public immediately. Every wallet's selected outcome and stake become public through bounded post-finalization position publication.
-- Each position's exact payout amount and `Claimable`, `Claimed`, or `Slashed` status becomes public with that position record.
-- Every revealed Vote uses its own permanent public `VotePositionAccount`, uniquely keyed by the Vote Round and voter wallet. The round stores fixed-size aggregates, its immutable position count, publication progress, and a completion marker; it never stores a growable vector of voter positions.
+- Intended privacy is contingent on the mandatory PER/eSPL feasibility gate. It must prove write-without-read authorization for an unbounded voter set and every PDA authority needed for setup, finalization, publication, claims, treasury delivery, and cleanup.
+- If the gate passes, individual choices, stake amounts, private balances, and per-outcome totals are private inside the MagicBlock PER during the Voting Window, preventing voters from following a visible leader.
+- PER settlement freezes aggregate stake per outcome. The base Assertion cannot become `Resolved` until an authenticated aggregate receipt is committed, undelegated, and validated so those totals are public on Solana. Every wallet's selected outcome and stake become public through bounded post-finalization position publication.
+- Each position's exact payout amount and `Claimable`, already-`Claimed`, or `Slashed` status becomes public with that position record. A later claim is synchronized separately from an authenticated receipt, so public status may lag without permitting another payout.
+- Every revealed Vote uses its own permanent public `VotePositionAccount`, uniquely keyed by the Vote Round and voter wallet. Before casting, the voter creates and funds it on Solana and delegates it blank; after finalization the PER writes it and commit-and-undelegate restores it for registration. No second per-voter publication receipt is added. The round stores fixed-size aggregates, its immutable position count, publication progress, and a completion marker; it never stores a growable vector of voter positions.
 - Every voter normally funds the SOL account-creation balance for its own permanent Vote position, including a bonded wallet that also Votes. An integration may sponsor this external cost, but Opal does not guarantee sponsorship.
 - A setup that never produces an accepted Vote does not become a permanent record and can close safely with its lamports returned to the original payer. Once accepted, the position and its account-creation balance are permanent and non-recoverable.
 - Preparing the base-layer position may reveal the wallet's intention to participate during the Voting Window, but not its selected outcome or stake.
 - The truth outcome and payout formula finalize without enumerating every voter. Deterministic bounded batches publish position records afterward, and the public mapping is incomplete until `PositionPublicationComplete` is set.
-- Position publication is permissionless and never expires. Any caller may publish still-missing valid records; the protocol derives their contents from authenticated finalized state and rejects alteration or duplicate progress.
+- Position publication never expires and is permissionless only if the feasibility spike proves its PDA authority. A valid caller may register still-missing restored records; the protocol validates their contents against authenticated finalized state and rejects alteration or duplicate progress.
 - The publication caller normally pays the external transaction cost unless an integration sponsors it. Opal charges no publication fee, guarantees no sponsor, and pays no caller reward.
 - Full-list consumers and auditors wait for position-publication completion. Integrations consuming only the final Assertion outcome do not; `Resolved` is independent of publication progress.
 - A bonded position and Vote position remain separate records and entitlements when one wallet owns both.
 - A wallet's total Private Voting Balance remains private.
 - The MVP does not promise permanent voter anonymity.
 - One deployment-wide Voting PER is fixed at deployment. Clients resolve its current endpoint through the MagicBlock router rather than choosing a validator per round or hard-coding a regional endpoint.
+- Before Devnet, a focused PER/eSPL spike must prove that a voter can lock stake and submit one immutable Vote without receiving read access to the shared tally or other positions. Keeping the state unreadable is not sufficient if the same permission boundary prevents the voter from writing. The spike also gates the exact custody model and MagicBlock SDK version.
+- The same deployment gate identifies who provisions the validator-scoped eSPL mint, transfer queue, shared global vault, and rent-PDA infrastructure. If hosted MagicBlock does not own that responsibility, the Devnet deployment operator pays the one-time bootstrap outside protocol treasury and participant reserves. This infrastructure expense is not per-participant sponsorship.
 
 ## Vote-stage payout claims
 
-- Vote finalization freezes the outcome, fee totals, reward inputs, and exact payout entitlement for every position.
+- Vote finalization freezes the outcome, fee totals, per-outcome position counts, and immutable reward inputs, making each exact payout deterministic without enumerating every position. It initializes the positive-unclaimed-position count rather than claiming that aggregate weight reveals the exact sum of all payout floors.
 - Finalization does not pay an unbounded voter set in one transaction.
-- A positive payout becomes `Claimable` immediately when finalization confirms; there is no cooldown or claim-opening transaction.
+- A positive payout becomes `Claimable` immediately when authoritative PER settlement freezes the round; this may precede the deterministic Solana `Resolved` projection. There is no cooldown or claim-opening transaction.
 - A fully lost position becomes terminal `Slashed` and has no zero-value claim.
 - The claimant must sign a claim transaction.
 - A claim can only credit the original wallet's canonical Private Voting Balance. It cannot redirect to another private balance or a public token account.
-- Claims never expire. Unclaimed USDC remains reserved for its owner in the Vote Settlement Vault.
+- The claim validates an existing balance but never creates it. A bonded owner without one uses the spike-proven direct initializer and pays its SOL setup costs before claiming; no positive USDC deposit may be required, and the missing destination does not change the non-expiring `Claimable` entitlement.
+- Claims never expire. Unclaimed USDC remains reserved for its owner in the logical Vote Settlement Vault balance, keeping the configured PER on the post-finalization payout path; Devnet has no base fallback or admin migration.
 - Claim amounts never change or accrue while unclaimed.
 - Bond and Vote positions use separate claim records. If one wallet owns both, a client may bundle both claim instructions into one transaction and signature.
 - Opal charges no claim fee. The claimant pays external execution costs unless an integrator sponsors them.
 - `Resolved` means the truth outcome and payout formula are final; it does not mean every payout has been claimed.
-- Repeating a successful claim cannot pay twice.
+- The claimant first funds and delegates a base-created `ClaimReceipt`. Through the pinned onchain eSPL interface, the payout transfer, positive-unclaimed count, private claimed marker, and receipt update atomically inside the PER. Repeating a successful claim cannot pay twice; an event or hosted API transfer is not a substitute.
+- A restored position registers as `Claimed` only if the base instruction also validates the matching restored `ClaimReceipt`. Otherwise it may conservatively begin as stale `Claimable`, and later synchronization advances it without moving status backward. The public projection is not the double-claim authority, and synchronization is permissionless only if the feasibility spike proves its PDA authority.
 
 ## Public records and cleanup
 
 - Assertion, dispute, resolution, and public payout-status records remain readable indefinitely and cannot be closed for rent recovery.
 - Their account-creation payer treats the storage cost as non-recoverable.
-- Empty protocol-owned vaults and transient private accounts may close only after balance, lock, and liability checks reach zero.
-- A Vote Settlement Vault cannot close while any non-expiring payout remains unclaimed.
+- The logical Vote Settlement Vault record may close only after independent checks prove zero balance, active locks, positive-unclaimed-position count, and unstaged fee or pro-rata-dust liability; a generic settled flag is insufficient. eSPL's shared per-mint global vault is not closed per Opal round.
+- Other transient private accounts use type-specific safety checks rather than inapplicable token or payout fields.
+- The logical settlement record cannot close while any non-expiring payout remains unclaimed. Once funds move to staging, a pending `TreasuryFeeDelivery` or `TreasuryDustDelivery` blocks the staging balance and that delivery record instead.
 - Every closable account records its original creation payer as its immutable Rent Refund Recipient.
-- Reclaimed lamports return to the original payer. If Opal or an integrator sponsored creation, the sponsor receives the refund.
-- Anyone may close an eligible protocol-owned vault; the caller cannot redirect rent or delete public history.
+- Reclaimed lamports return to the original payer. If a participant or integrating application paid for creation, that payer receives the refund.
+- Protocol-owned cleanup is permissionless only if the feasibility spike proves its PDA authority path. An eligible caller cannot redirect rent or delete public history.
 - Closing a Private Voting Balance requires the wallet's signature.
 
 ## Integration safety
 
-- Irreversible downstream settlement must read the exact Assertion account directly at Solana `finalized` commitment and require its normal terminal `Resolved` state. A `processed`, `confirmed`, or indexer-only observation is insufficient.
+- Before irreversibly resolving, voiding, refunding, or otherwise consuming an Opal result, an integration must read the exact Assertion account directly at Solana `finalized` commitment. Consuming a truth outcome requires `Resolved`. An integration may act on terminal `ResolverUnavailable` only through an explicit non-truth policy; the canonical prediction market may void/refund but must not select YES or NO. This does not prohibit pre-resolution activity that does not consume an Opal result, such as trading; executed trades are not described as reversible. A `processed`, `confirmed`, or indexer-only observation is insufficient.
 - Indexers may support discovery and responsive UI, but they are not the source of truth for irreversible actions.
 - The Preview Integration API separates observable states from action failures. Private-balance transfer `Pending` and `RecoveryNeeded` values and the terminal Assertion status `ResolverUnavailable` are returned by reads; they are not thrown errors.
 - An action that cannot proceed rejects with a typed integration error containing a stable semantic string `code`, a stable `nextAction`, and an optional raw `cause` for diagnostics. Integrations branch only on the stable fields, never Anchor numeric codes, log text, RPC wording, or wallet-adapter messages. Unknown failures remain explicitly unknown rather than being guessed into a known semantic code. See [ADR-0022](adr/0022-stable-integration-errors-and-domain-statuses.md).

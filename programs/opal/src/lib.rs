@@ -13,9 +13,7 @@ pub use instructions::challenge_llm_resolution::{
 };
 pub use instructions::create_assertion::{CreateAssertion, CreateAssertionArgs};
 pub use instructions::dispute_assertion::{DisputeAssertion, DisputeAssertionArgs};
-pub use instructions::finalize_llm_resolution::{
-    FinalizeLlmResolution, FinalizeLlmResolutionArgs,
-};
+pub use instructions::finalize_llm_resolution::{FinalizeLlmResolution, FinalizeLlmResolutionArgs};
 pub use instructions::finalize_undisputed::{FinalizeUndisputed, FinalizeUndisputedArgs};
 pub use instructions::finalize_vote_resolution_placeholder::{
     FinalizeVoteResolutionPlaceholder, FinalizeVoteResolutionPlaceholderArgs,

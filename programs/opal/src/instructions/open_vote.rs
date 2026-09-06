@@ -41,7 +41,8 @@ pub struct OpenVote<'info> {
 }
 
 pub fn handler(ctx: Context<OpenVote>, _args: OpenVoteArgs) -> Result<()> {
-    // !TBD: auth policy for open_vote is undecided. Currently permissionless for liveness.
+    // This placeholder is permissionless for liveness. The target instruction becomes the
+    // receipt-validated `publish_vote_ready` projection described in docs/architecture.md.
     let assertion = ctx.accounts.assertion.load()?;
     let vote_round = ctx.accounts.vote_resolution_round.load()?;
     require!(

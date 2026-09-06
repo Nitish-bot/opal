@@ -2,7 +2,7 @@
 
 A Solana-native optimistic oracle for natural-language statements.
 
-Opal treats assertions as true by default. If nobody disputes within a liveness window, the assertion resolves `True`. If disputed, it escalates through an LLM resolution round and (if challenged) a staked private vote.
+Opal treats assertions as true by default. If nobody disputes within a liveness window, the assertion resolves `True`. If disputed, it escalates through an LLM resolution round and, if challenged, an intended private staked vote whose MagicBlock permission and custody design remains a Devnet feasibility gate.
 
 Opal resolves **rubric-relative truth**, not absolute truth: every assertion ships its own Resolution Spec — the asserter's rubric for _how_ the statement should be judged — and Opal applies that spec rather than adjudicating any universal reality. The same statement text can resolve differently across assertions. See [ADR-0001](docs/adr/0001-rubric-relative-truth.md).
 
@@ -16,7 +16,7 @@ Target use case: prediction-market resolution. Statements like "Kanye West's Del
 2. **Wait** — liveness window where anyone can dispute
 3. **Undisputed** — if no dispute, resolves `True`
 4. **Disputed** — the first dispute triggers on-chain LLM resolution: a single trusted off-chain resolver posts the verdict via the resolver-gated `submit_llm_resolution` instruction `[Built]`; the off-chain service that makes the LLM call is `[MVP-target]` (the former 3-feed Switchboard council was removed per [ADR-0002](docs/adr/0002-trusted-llm-resolver.md))
-5. **Challenged** — if the LLM verdict is challenged, escalate to a per-dispute staked vote, kept private during the voting window via a MagicBlock ephemeral rollup ([ADR-0003](docs/adr/0003-private-staked-voting.md))
+5. **Challenged** — if the LLM verdict is challenged, escalate to a per-dispute staked vote intended to remain private during the voting window via a MagicBlock ephemeral rollup; Devnet release is gated on proving the required permission and custody paths ([ADR-0003](docs/adr/0003-private-staked-voting.md))
 6. **Resolved** — the final outcome is posted on-chain
 
 The LLM layer is deliberately trusted, not trustless: a wrong verdict is challengeable into the staked vote, which is the real trust backstop.
@@ -26,18 +26,18 @@ The LLM layer is deliberately trusted, not trustless: a wrong verdict is challen
 - `True` — verified under the spec
 - `False` — contradicted under the spec
 - `Unresolvable` — an affirmative finding that the statement cannot be decided under the spec. `[MVP-target]` The asserter is incorrect; in voting, `Unresolvable` must itself reach 67% and participates in ordinary slashing and rewards.
-- `NoConsensus` — no voting option reached 67%. `[MVP-target]` Settles no-fault: every bond and voting stake is returned minus ordinary fees, nobody is slashed, and no rewards are paid. See [ADR-0007](docs/adr/0007-unresolvable-vs-no-consensus.md).
+- `NoConsensus` — either Vote Quorum failed or no voting option reached 67%. `[MVP-target]` Settles no-fault: every bond and voting stake is returned minus ordinary fees, nobody is slashed, and no rewards are paid. See [ADR-0007](docs/adr/0007-unresolvable-vs-no-consensus.md).
 
 ## Voting `[MVP-target]`
 
-The final escalation is a private, per-dispute, USDC-staked vote (today `open_vote` sets up the round, but real staking, tallying, and MagicBlock privacy are not yet built):
+The final escalation target is a private, per-dispute, USDC-staked vote, contingent on the focused MagicBlock feasibility gate below (today `open_vote` only advances placeholder state; real staking, tallying, and privacy are not yet built):
 
 - **Linear weight** — 1 staked USDC = 1 vote. Sybil-neutral; whale dominance is deterred by slashing, not by a weight curve.
 - **Schelling-point slashing** — losing-side voters are slashed and winning-side voters are paid from the losing side, so the honest answer under the spec is the focal point.
 - **Pre-funded** — voters deposit USDC into a reusable Private Voting Balance before casting; a vote cannot pull its stake directly from a public wallet balance.
 - **One Voting PER** — every Devnet Vote Round and private balance uses the same deployment-wide MagicBlock validator, allowing balances to be reused across votes.
-- **Co-located settlement** — before the seven-day Voting Window starts, all three Participant Bonds move into the same private rollup as voting stake. Opal creates and sponsors any missing private payout balances for the bonded participants. Every vote-stage refund and reward—including asserter and disputer payouts—must be claimed into a Private Voting Balance after finalization; withdrawing to the public Solana wallet is a separate manual action.
-- **Private while open** — during the Voting Window, a MagicBlock PER hides private balances, choices, stakes, and per-outcome totals so voters cannot bandwagon. Deposits and withdrawals remain public on Solana. After settlement, aggregates and each wallet's selected outcome and stake are public.
+- **Co-located settlement** — before the seven-day Voting Window starts, all three Participant Bonds are deposited into eSPL's shared per-mint global vault on Solana and represented by the round's delegated logical settlement balance; each accepted Vote later moves its stake into that balance. The Vote Disputer funds capped onchain setup reserves, while each caller pays its own transaction/provider fees and each voter creates, funds, and delegates its own canonical Private Voting Balance. Opal provides no protocol-funded sponsorship. Every vote-stage refund and reward—including asserter and disputer payouts—must be claimed into that balance after finalization. A bonded non-voter may initialize and delegate an empty canonical claim destination only when needed; the feasibility spike must prove this path without requiring a positive USDC deposit. Withdrawing to the public Solana wallet is a separate manual action.
+- **Intended privacy while open (feasibility-gated)** — the MVP target uses a MagicBlock PER to hide private balances, choices, stakes, and per-outcome totals so voters cannot bandwagon. Current permissions do not document the required write-without-read primitive, so Devnet is blocked on a focused PER/eSPL spike; keeping the state unreadable to voters is not viable if it also prevents their writes. Deposits and withdrawals remain public on Solana. By the time the Assertion's `Resolved` state is observable on Solana, aggregate stake per outcome is public; wallet-level outcome, stake, payout, and status appear only through bounded post-finalization publication, and the public mapping is incomplete until `PositionPublicationComplete`.
 - **Supermajority** — `True`, `False`, or `Unresolvable` must reach 67%, otherwise the vote resolves `NoConsensus`.
 
 ## Asset
@@ -119,6 +119,7 @@ Directions recorded so they're not mistaken for current behavior:
 - **Proof-of-personhood** — enabling sub-linear/quadratic voting weight without Sybil collapse.
 - **Stake-duration reputation** — long-term staking that accrues voter weight.
 - **Timed resolution** — a possible future protocol-level lifecycle field preventing premature resolution; it would not be an asserter-selected cutoff inside the immutable Resolution Spec.
+- **Source/truth-change invalidation** — replace the MVP's stage-local current-information rule with a future mechanism that invalidates a non-final Assertion when authoritative source information or rubric-relative truth materially changes. Detection, terminal representation, and settlement remain undecided.
 
 ## Security
 
